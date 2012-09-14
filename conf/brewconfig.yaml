@@ -1,0 +1,4 @@
+heater_queue:  tcp://127.0.0.1:9909
+thermo_queue:  tcp://127.0.0.1:9908
+report_url: http://www.lrp-world.org/brewing/in?
+thermometer_binary: '/home/richc/brewcontroller/bin/pcsensor -s'
