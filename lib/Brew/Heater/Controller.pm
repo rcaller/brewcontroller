@@ -114,9 +114,9 @@ sub control {
   my $self = shift;
   my $on = LOOP_TIME*10000*$self->{on};
   my $off = (LOOP_TIME*1000000)-$on;
-#  print "ON  $on\n";
+  system "./bin/on.sh";
   usleep $on if ($on>0);
-#  print "OFF $off\n";
+  system "./bin/off.sh";
   usleep $off if ($off>0);
 }
 

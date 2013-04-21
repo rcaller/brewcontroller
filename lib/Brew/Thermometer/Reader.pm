@@ -7,7 +7,7 @@ Brew::Thermometer::Reader
 =head1 SYNOPSIS
 
     use Brew::Thermometer::Reader;
-    my $brew = Brew::Thermometer::Reader->new();
+    my $brew = Brew::Thermometer::Reader->new(therm=>idvalue);
     $brew->go();
 
 =head1 DESCRIPTION
@@ -22,6 +22,7 @@ use strict;
 use warnings;
 
 use ZeroMQ qw/:all/;
+use JSON;
 
 use constant LOOP_TIME => 1;
 
@@ -31,8 +32,7 @@ use constant LOOP_TIME => 1;
 
 Returns a new Brew::Thermometer::Reader object.
 
-Takes one arguement, the path to an executable that will itself
-print temperature to STDOUT when run
+Arguement is hash of names and id numbers for thermometers
 
 =cut
 
@@ -40,8 +40,8 @@ print temperature to STDOUT when run
 
 sub new {
   my $class = shift;
-  my $binary = shift;
-  my $self = {binary => $binary};
+  my ($therms)= @_;
+  my $self = {thermometers => $therms};
   bless $self, $class;
   return $self;
 }
@@ -58,10 +58,23 @@ sub go {
   my $self = shift;
   
   while (1) {
-    my $executable = $self->{binary};
-    my $temp = `$executable`;
-    chomp($temp);
-    $self->{queue}->send($temp);
+    my $temp_data = {};
+    foreach my $therm(keys %{$self->{thermometers}}) {
+      my $therm_id = $self->{thermometers}{$therm};
+      next if !$therm_id;
+      my $sensor_temp = `cat /sys/bus/w1/devices/$therm_id/w1_slave 2>&1`;
+      if ($sensor_temp !~ /No such file or directory/) {
+        if ($sensor_temp !~ /NO/) {
+          $sensor_temp =~ /t=(\d+)/i;
+          my $temperature = (($1/1000));
+          $temp_data->{$therm}=$temperature
+        }
+      }
+      else { 
+	print STDERR "$therm_id not found\n"; 
+      }       
+    }
+    $self->{queue}->send_as(json => $temp_data);
     sleep LOOP_TIME
   }
 

@@ -1,4 +1,14 @@
 heater_queue:  tcp://127.0.0.1:9909
 thermo_queue:  tcp://127.0.0.1:9908
-report_url: http://www.lrp-world.org/brewing/in?
-thermometer_binary: '/home/richc/brewcontroller/bin/pcsensor -s'
+report_url: http://192.168.0.6/brewing/in?
+thermometer_binary: '/home/richc/pcsensor/pcsensor -s'
+
+pid:
+  p: 10
+  i: 0
+  d: 0
+
+thermometers: 
+  mash: 28-000004672ef9
+  herms: 28-00000467bc19
+  flow: 28-0000047f4a80

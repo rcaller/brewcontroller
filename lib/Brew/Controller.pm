@@ -26,8 +26,10 @@ use warnings;
 use Data::Dumper;
 use Brew::Heater::Controller;
 use Brew::Thermometer::Reader;
+use Log::Log4perl;
 
 use Brew::Config;
+use Brew::PID;
 
 use JSON;
 
@@ -38,13 +40,11 @@ use constant LOOP_TIME => 5;
 
 use constant THERMOMETER_BINARY=>"/home/richc/brewcontroller/bin/pcsensor -s";
 
-use constant PROPORTIONAL => 2;
 
 use constant HEATER_QUEUE_ADDRESS => 'tcp://127.0.0.1:9909';
 use constant THERMO_QUEUE_ADDRESS => 'tcp://127.0.0.1:9908';
 
 
-my $target = 30;
 
 =over 12
 
@@ -58,7 +58,7 @@ Returns a new Brew::Heater::Controller object.
 
 sub new {
   my $class = shift;
-  my $self = {};
+  my $self = {target_temp => 0};
   bless $self, $class;
   return $self;
 }
@@ -72,6 +72,7 @@ sub init {
   $self->{config} = Brew::Config->new();
   $self->{ua} = LWP::UserAgent->new;
   $self->{mq} = ZeroMQ::Context->new();
+  $self->{pid} = Brew::PID->new($self->{config}->get('pid'));
   $self->{heater_socket} = $self->{mq}->socket(ZMQ_PUSH);
   $self->{heater_socket}->bind($self->{config}->get('heater_queue'));
   # fork heater controller process
@@ -90,7 +91,7 @@ sub init {
 
   my $pid2 = fork();; 
   if (!$pid2) {
-    my $thermo = Brew::Thermometer::Reader->new($self->{config}->get('thermometer_binary'));
+    my $thermo = Brew::Thermometer::Reader->new($self->{config}->get('thermometers'));
     $thermo->subscribe_to_queue($self->{config}->get('thermo_queue'));
     $thermo->go();
     die("Thermometer Child exit");
@@ -109,19 +110,38 @@ sub go {
   my $self = shift;
   $self->init();
   print "GO!\n";
+  my $p =  $self->{config}->get('pid')->{p};
   while (1) {
-    my $temp = $self->read_temp();
-    if ($temp) {
-      $self->report_temp($temp); 
-      my $setting = PROPORTIONAL * ($target - $temp);
-      print  "temp - $temp : target - $target : st - $setting\n";
-      $self->{heater_socket}->send($setting);
+    my $temps = $self->read_temp();
+    if ($temps) {
+      $self->{target_temp} = $self->report_temp($temps);
+      if ($self->{target_temp}) {
+        my $temp;
+        my $target_temp;
+        if ($self->{target_temp}{active}) {
+          $temp = $temps->{flow}; 
+          $target_temp = $self->{target_temp}{active};
+        }
+        else {
+           $temp = $temps->{herms};
+          $target_temp = $self->{target_temp}{pre_warm};
+
+        }
+
+        my $setting = 100 * $self->{pid}->getResponse(current=>$temp, target=>$target_temp);
+        $setting=100 if $setting>100;
+        print  "temp - $temp : target - $target_temp : st - $setting\n";
+        $self->{heater_socket}->send($setting);
+      }
+      else {
+        print "No target set\n";
+      }
     }
     else {
       print "Temp not set\n";
     }
-    sleep(3);
-  }
+	    sleep(3);
+	  }
 
 }
 
@@ -134,9 +154,9 @@ Read the latest temperature from the thermometer
 sub read_temp {
   my $temp;
   my $self = shift;
-  while (my $l = $self->{thermo_socket}->recv(ZMQ_NOBLOCK)) {
-    if (defined($l->data) && $l->data) {
-      $temp = int($l->data);
+  while (my $l = $self->{thermo_socket}->recv_as("json", ZMQ_NOBLOCK)) {
+    if (defined($l) && $l) {
+      $temp = $l;
     }
   }
   return $temp;
@@ -144,15 +164,19 @@ sub read_temp {
 
 =item C<report_temp>
 
-Report current temp to server
+Report current temps to server
 
 =cut
 
 sub report_temp {
   my $self = shift;
-  my ($temp) = @_;
-  my $url = $self->{config}->get('report_url') . $temp;
-  my $resp = $self->{ua}->get($url);
+  my ($temps) = @_;
+  print STDERR Dumper($temps);
+  my $url = $self->{config}->get('report_url');
+  my $req = HTTP::Request->new('POST', $url);
+  $req->header( 'Content-Type' => 'application/json' );
+  $req->content( to_json($temps) );
+  my $resp = $self->{ua}->request($req);
   return $self->parse_response($resp->content());
 }
 
@@ -165,7 +189,7 @@ Parse the data back from the server and return either undef or a brewstatus obje
 sub parse_response {
   my $self = shift;
   my ($resp) = @_;
-
+  return from_json($resp);
 }
 
 =back

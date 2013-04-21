@@ -21,8 +21,8 @@ Simple config reader
 use strict;
 use warnings;
 use YAML::Syck;
-
-use constant CONFIG_FILE => './conf/brewconfig.yaml';
+use FindBin;
+use constant CONFIG_FILE => "$FindBin::Bin/conf/brewconfig.yaml";
 
 
 =over 12
