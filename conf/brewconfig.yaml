@@ -1,12 +1,12 @@
 heater_queue:  tcp://127.0.0.1:9909
 thermo_queue:  tcp://127.0.0.1:9908
-report_url: http://192.168.0.6/brewing/in?
+report_url: http://192.168.0.100/brewing/in?
 thermometer_binary: '/home/richc/pcsensor/pcsensor -s'
 
 pid:
-  p: 10
-  i: 0
-  d: 0
+  p: 0.2
+  i: 0.05
+  d: -0.05
 
 thermometers: 
   mash: 28-000004672ef9

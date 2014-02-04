@@ -23,7 +23,7 @@ use warnings;
 use YAML::Syck;
 use FindBin;
 use constant CONFIG_FILE => "$FindBin::Bin/conf/brewconfig.yaml";
-
+use constant LOG_CONFIG => "$FindBin::Bin/conf/log4perl.conf";
 
 =over 12
 
@@ -65,6 +65,16 @@ sub get {
   return $self->{data}{$config_name};
 }
 
+=item C<log_config>
+
+Return path to logger config
+
+=cut
+
+sub log_config {
+  my $self = shift;
+  return LOG_CONFIG
+}
 
 =head1 AUTHOR
 

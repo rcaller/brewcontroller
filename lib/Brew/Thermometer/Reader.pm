@@ -23,6 +23,7 @@ use warnings;
 
 use ZeroMQ qw/:all/;
 use JSON;
+use Log::Log4perl;
 
 use constant LOOP_TIME => 1;
 
@@ -42,6 +43,7 @@ sub new {
   my $class = shift;
   my ($therms)= @_;
   my $self = {thermometers => $therms};
+  $self->{logger} = Log::Log4perl->get_logger('brew.controller');
   bless $self, $class;
   return $self;
 }
@@ -71,7 +73,7 @@ sub go {
         }
       }
       else { 
-	print STDERR "$therm_id not found\n"; 
+	 $self->{logger}->warn("$therm_id not found"); 
       }       
     }
     $self->{queue}->send_as(json => $temp_data);

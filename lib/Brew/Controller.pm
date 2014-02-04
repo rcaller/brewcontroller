@@ -27,7 +27,8 @@ use Data::Dumper;
 use Brew::Heater::Controller;
 use Brew::Thermometer::Reader;
 use Log::Log4perl;
-
+use List::Util qw( min max );
+use Math::Derivative qw(Derivative1 Derivative2);
 use Brew::Config;
 use Brew::PID;
 
@@ -70,15 +71,24 @@ sub new {
 sub init {
   my $self = shift;
   $self->{config} = Brew::Config->new();
+  Log::Log4perl::init($self->{config}->log_config());
+  $self->{logger} = Log::Log4perl->get_logger('brew.controller');
+  $self->{logger}->warn('Controller Starting');
+  $self->{config} = Brew::Config->new();
   $self->{ua} = LWP::UserAgent->new;
   $self->{mq} = ZeroMQ::Context->new();
   $self->{pid} = Brew::PID->new($self->{config}->get('pid'));
   $self->{heater_socket} = $self->{mq}->socket(ZMQ_PUSH);
   $self->{heater_socket}->bind($self->{config}->get('heater_queue'));
+
+
+  #$self->{tune}=0;
+
   # fork heater controller process
   my $pid = fork();
   if (!$pid) {
     my $heat = Brew::Heater::Controller->new();
+    $heat->set_logger($self->{logger});
     $heat->subscribe_to_queue($self->{config}->get('heater_queue'));
     $heat->go();
     die("Heater Child exit");
@@ -109,40 +119,101 @@ Start the brew controller daemon
 sub go {
   my $self = shift;
   $self->init();
-  print "GO!\n";
+   $self->{logger}->warn('Starting control');
   my $p =  $self->{config}->get('pid')->{p};
   while (1) {
+    $self->tune() if ($self->{tune});
     my $temps = $self->read_temp();
     if ($temps) {
       $self->{target_temp} = $self->report_temp($temps);
+      $self->{logger}->warn("TT".Dumper($self->{target_temp}));
       if ($self->{target_temp}) {
         my $temp;
         my $target_temp;
+        
         if ($self->{target_temp}{active}) {
-          $temp = $temps->{flow}; 
+          if (!$temps->{flow}) {
+            $self->{logger}->warn("No Flow Temp");
+            next;
+          }
+          $temp = $temps->{flow} - 0.3; 
           $target_temp = $self->{target_temp}{active};
         }
         else {
+           if (!$temps->{herms}) {
+            $self->{logger}->warn("No HERMS Temp");
+            next;
+          }
+ 
            $temp = $temps->{herms};
           $target_temp = $self->{target_temp}{pre_warm};
 
         }
-
+        
         my $setting = 100 * $self->{pid}->getResponse(current=>$temp, target=>$target_temp);
         $setting=100 if $setting>100;
-        print  "temp - $temp : target - $target_temp : st - $setting\n";
+        $setting = 0 if $temps->{flow} > $target_temp+5;
+        $self->{logger}->warn("Temp - $temp");
+        $self->{logger}->warn("Target - $target_temp");
+        $self->{logger}->warn("Setting - $setting");
         $self->{heater_socket}->send($setting);
       }
       else {
-        print "No target set\n";
+         $self->{logger}->warn('No target set');
       }
     }
     else {
-      print "Temp not set\n";
+       $self->{logger}->warn('Temp not set');
     }
 	    sleep(3);
-	  }
+  }
 
+}
+
+=item C<tune>
+
+Run a Zieger-Nichols tuning process
+
+=cut
+
+sub tune {
+  my $self = shift;
+  my $tune_setting=20;
+  my $tune_start = time;
+  my $tuning_data={};
+  $self->{logger}->warn('Starting tune');
+  while (1) {
+    sleep 1;
+    last if (!$self->{tune});
+    my $temps = $self->read_temp();
+    next if (!$temps->{flow});
+    $self->report_temp($temps);
+    my $time = time - $tune_start;
+    $tuning_data->{$time} = $temps->{flow};
+    $self->{heater_socket}->send($tune_setting);
+    $self->{logger}->info("tune - $time:".$temps->{flow});
+    last if (defined($tuning_data->{$time - 120}) && ($temps->{flow} == $tuning_data->{$time - 20})); 
+  
+    my $fh;
+    open $fh, '>', '/tmp/tuningdata.json';
+    print $fh to_json($tuning_data);
+    close $fh;
+    my @x = keys(%$tuning_data);
+    my @y = values(%$tuning_data);
+    eval {
+      my @derivative = Derivative1(\@x, \@y);
+      my @second_derivative = Derivative2(\@x, \@y);
+      my $index = grep {$second_derivative[$_] == (max(@second_derivative))} 0..$#second_derivative; 
+      $self->{logger}->info("index $index"); 
+      my $L = $y[$index] - ($derivative[$index] * $x[$index]);
+      my $T = ((max(@y) - $L) / $derivative[$index]) - $L;
+      print "L - $L\nT - $T\n\n";
+      my $p = 1.2 * $T / $L;
+      my $i = 0.6 * $T / $L^2;
+      my $d = 0.6 * $T;
+      print "p-$p\ni-$i\nd-$d\n";
+    }
+  }
 }
 
 =item C<read_temp>
@@ -171,7 +242,7 @@ Report current temps to server
 sub report_temp {
   my $self = shift;
   my ($temps) = @_;
-  print STDERR Dumper($temps);
+  $self->{logger}->info(Dumper($temps));
   my $url = $self->{config}->get('report_url');
   my $req = HTTP::Request->new('POST', $url);
   $req->header( 'Content-Type' => 'application/json' );

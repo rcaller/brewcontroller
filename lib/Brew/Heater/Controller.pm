@@ -26,6 +26,7 @@ preious number it received or 0 if it has no number yet.
 use strict;
 use warnings;
 
+use Log::Log4perl;
 use IO::Handle;
 use Time::HiRes qw|usleep|;
 use ZeroMQ qw/:all/;
@@ -63,6 +64,15 @@ sub init {
   else {
     die("Failed to open STDIN");
   }
+}
+
+=item C<set_logger>
+  Set the logger
+=cut
+
+sub set_logger {
+  my $self = shift;
+  $self->{logger} = shift;
 }
 
 =item C<go>
@@ -114,10 +124,13 @@ sub control {
   my $self = shift;
   my $on = LOOP_TIME*10000*$self->{on};
   my $off = (LOOP_TIME*1000000)-$on;
-  system "./bin/on.sh";
+  my $err = `./bin/on.sh 2>&1`;
   usleep $on if ($on>0);
-  system "./bin/off.sh";
+  $err = `./bin/off.sh 2>&1`;
   usleep $off if ($off>0);
+  if ($err) {
+    $self->{logger}->error("Temperature control failure");
+  }
 }
 
 =back
