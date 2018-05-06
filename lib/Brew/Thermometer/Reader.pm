@@ -62,13 +62,14 @@ sub go {
   while (1) {
     my $temp_data = {};
     foreach my $therm(keys %{$self->{thermometers}}) {
-      my $therm_id = $self->{thermometers}{$therm};
+      my $therm_id = $self->{thermometers}{$therm}{id};
       next if !$therm_id;
       my $sensor_temp = `cat /sys/bus/w1/devices/$therm_id/w1_slave 2>&1`;
       if ($sensor_temp !~ /No such file or directory/) {
         if ($sensor_temp !~ /NO/) {
           $sensor_temp =~ /t=(\d+)/i;
-          my $temperature = (($1/1000));
+          $self->{logger}->warn($self->{thermometers}{$therm}{correct});
+          my $temperature = (($1/1000)+$self->{thermometers}{$therm}{correct});
           $temp_data->{$therm}=$temperature
         }
       }

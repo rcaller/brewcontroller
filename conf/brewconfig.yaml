@@ -9,6 +9,12 @@ pid:
   d: -0.05
 
 thermometers: 
-  mash: 28-000004672ef9
-  herms: 28-00000467bc19
-  flow: 28-0000047f4a80
+  mash:
+    id: 28-000004672ef9
+    correct: -0.5
+  herms:
+    id: 28-00000467bc19
+    correct: 0
+  flow:
+    id: 28-0000047f4a80
+    correct: -1

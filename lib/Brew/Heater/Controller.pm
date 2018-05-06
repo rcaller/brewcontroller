@@ -30,6 +30,7 @@ use Log::Log4perl;
 use IO::Handle;
 use Time::HiRes qw|usleep|;
 use ZeroMQ qw/:all/;
+use FindBin;
 use constant LOOP_TIME => 5;
 
 =over 12
@@ -124,12 +125,13 @@ sub control {
   my $self = shift;
   my $on = LOOP_TIME*10000*$self->{on};
   my $off = (LOOP_TIME*1000000)-$on;
-  my $err = `./bin/on.sh 2>&1`;
+  my $err = `$FindBin::Bin/bin/on.sh 2>&1`;
+  $self->{logger}->error("$FindBin::Bin/bin/on.sh");
   usleep $on if ($on>0);
-  $err = `./bin/off.sh 2>&1`;
+  $err = `$FindBin::Bin/bin/off.sh 2>&1`;
   usleep $off if ($off>0);
   if ($err) {
-    $self->{logger}->error("Temperature control failure");
+    $self->{logger}->error("Temperature control failure: $err");
   }
 }
 
